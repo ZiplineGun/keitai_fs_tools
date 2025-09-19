@@ -42,6 +42,7 @@ static const uint8_t nand_ecc_precalc_table[] = {
 // clang-format on
 
 bool g_w54tMode = false;
+bool g_doEcc = false;
 
 uint32_t popCnt(uint32_t value) {
     uint32_t result = 0;
@@ -96,17 +97,20 @@ int eccCorrect(uint8_t *data, uint8_t *data2, uint8_t mask) {
     return 0;
 }
 
-int decodeSpare(uint8_t *spare, uint16_t *block_index) {
+int decodeSpare(uint8_t *spare, uint16_t *block_index, bool doEcc) {
     uint32_t mergedWord = (spare[13] << 16) + (spare[14] << 8) + spare[15];
     if (!mergedWord || mergedWord == 0xFFFFFF) {
         return 2;
     }
 
-    uint8_t decodeResult;
-    eccDecode(spare + 13, &decodeResult);
-    if (eccCorrect(spare + 13, spare + 15, decodeResult) != 0) {
-        return -1;
-    }
+    if (doEcc) {
+        uint8_t decodeResult;
+        eccDecode(spare + 13, &decodeResult);
+        if (eccCorrect(spare + 13, spare + 15, decodeResult) != 0) {
+            return -1;
+        }
+    } 
+
     uint16_t val = (spare[13] << 8) + (spare[14]);
     if (!g_w54tMode) {
         if ((val & 0x8000) == 0) {
@@ -170,6 +174,8 @@ int main(int argc, char **argv) {
             g_w54tMode = true;
         } else if (strcmp(argv[i], "-bmsize") == 0) {
             blockMapSize = strtoul(argv[++i], nullptr, 10);
+        } else if (strcmp(argv[i], "-ecc") == 0) {
+            g_doEcc = true;
         }
     }
 
@@ -188,9 +194,9 @@ int main(int argc, char **argv) {
             fread(spare2, 1, 16, image->fp);
 
             uint16_t block_index, block_index2;
-            int status2 = decodeSpare(spare2, &block_index2);
+            int status2 = decodeSpare(spare2, &block_index2, g_doEcc);
             if (status2 != -4 && status2 != 2) {
-                int status = decodeSpare(spare, &block_index);
+                int status = decodeSpare(spare, &block_index, g_doEcc);
                 if (status != -4 && status != 2) {
                     if (status == -1 && status2 == -1) {
                         continue;
